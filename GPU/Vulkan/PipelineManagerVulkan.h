@@ -18,6 +18,8 @@
 #pragma once
 
 #include <cstring>
+#include <string>
+#include <vector>
 
 #include "Common/Data/Collections/Hashmaps.h"
 #include "Common/Thread/Promise.h"
@@ -115,3 +117,14 @@ private:
 	VkPipelineCache pipelineCache_ = VK_NULL_HANDLE;
 	VulkanContext *vulkan_;
 };
+
+// In-app log of pipeline-merge measurement samples. Entries accumulate while
+// recording; the System Information screen shows them and saves them to file.
+namespace PipelineLog {
+	bool *RecordingFlag();  // bound to the record checkbox
+	std::string GetCurrentStamp();  // "HH:MM:SS"
+	void AddEntry(std::string entry);  // no-op unless recording
+	std::vector<std::string> Entries();
+	void ClearEntries();
+	void Frame(int created, int mergeable);  // call every host frame; samples every ~10s
+}

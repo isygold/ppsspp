@@ -275,6 +275,8 @@ void GPU_Vulkan::EndHostFrame() {
 
 	drawEngine_.EndFrame();
 
+	PipelineLog::Frame(pipelineManager_->GetNumPipelines(), pipelineManager_->GetNumMergeablePipelines());
+
 	GPUCommonHW::EndHostFrame();
 }
 

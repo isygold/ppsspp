@@ -1,10 +1,15 @@
+#include <cstdio>
 #include <cstring>
 #include <memory>
+#include <mutex>
 #include <set>
+#include <string>
+#include <vector>
 #include "Common/Profiler/Profiler.h"
 
 #include "Common/Log.h"
 #include "Common/StringUtils.h"
+#include "Common/TimeUtil.h"
 #include "Common/Data/Text/StringWriter.h"
 #include "Common/GPU/Vulkan/VulkanContext.h"
 #include "GPU/Vulkan/PipelineManagerVulkan.h"
@@ -41,6 +46,57 @@ PipelineManagerVulkan::~PipelineManagerVulkan() {
 	vulkan_ = nullptr;
 }
 
+namespace PipelineLog {
+	static bool s_recording = false;
+	static int s_frameCounter = 0;
+	static std::vector<std::string> s_entries;
+	static std::mutex s_mutex;
+
+	bool *RecordingFlag() {
+		return &s_recording;
+	}
+
+	std::string GetCurrentStamp() {
+		return GetCurrentTimeHHMMSS();
+	}
+
+	void AddEntry(std::string entry) {
+		if (!s_recording)
+			return;
+		std::lock_guard<std::mutex> guard(s_mutex);
+		s_entries.push_back(std::move(entry));
+	}
+
+	std::vector<std::string> Entries() {
+		std::lock_guard<std::mutex> guard(s_mutex);
+		return s_entries;
+	}
+
+	void ClearEntries() {
+		std::lock_guard<std::mutex> guard(s_mutex);
+		s_entries.clear();
+	}
+
+	static std::string SampleLine(int created, int mergeable) {
+		char buf[128];
+		const float pct = created > 0 ? 100.0f * mergeable / created : 0.0f;
+		snprintf(buf, sizeof(buf), "%s | pipelines: %d created | mergeable: %d (%.1f%%)", GetCurrentTimeHHMMSS().c_str(), created, mergeable, pct);
+		return buf;
+	}
+
+	void Frame(int created, int mergeable) {
+		if (!s_recording) {
+			s_frameCounter = 0;
+			return;
+		}
+		// About 10 seconds at 60 fps.
+		if (++s_frameCounter < 600)
+			return;
+		s_frameCounter = 0;
+		AddEntry(SampleLine(created, mergeable));
+	}
+}  // namespace PipelineLog
+
 void PipelineManagerVulkan::Clear() {
 	pipelines_.Iterate([&](const VulkanPipelineKey &key, VulkanPipeline *value) {
 		if (!value->pipeline) {
@@ -56,6 +112,7 @@ void PipelineManagerVulkan::Clear() {
 	if (created > 0) {
 		// MEASUREMENT: one line per game session, for the pipeline-merge question.
 		INFO_LOG(Log::G3D, "Pipeline measurement: %d created, %d mergeable (%.1f%%)", created, mergeableCount_, 100.0f * mergeableCount_ / created);
+		PipelineLog::AddEntry("=== session ended " + PipelineLog::SampleLine(created, mergeableCount_) + " ===");
 	}
 	pipelines_.Clear();
 	mergeableCount_ = 0;
